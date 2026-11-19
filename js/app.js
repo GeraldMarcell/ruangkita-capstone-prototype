@@ -1,174 +1,287 @@
 (() => {
-  const { rooms, scenarios, formatActivityClass, formatAvailabilityClass, experiment } = window.RuangKita;
+  const { rooms, schedule, bookings, days } = window.RuangKita;
   const app = document.querySelector('#app');
-  const compareIds = new Set();
-  let currentPath = '';
-  let previousPath = '';
-  const $ = selector => document.querySelector(selector);
-  const locationIcon = '<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13 6.5c0 3.4-5 7.5-5 7.5S3 9.9 3 6.5a5 5 0 1 1 10 0Z" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="6.5" r="1.6" stroke="currentColor" stroke-width="1.4"/></svg>';
-  const badge = (text, type) => `<span class="pill ${type}"><span class="badge-mark" aria-hidden="true"></span>${text}</span>`;
-  const art = (room, extra = '') => `<div class="room-art art-${room.art} ${extra}" aria-hidden="true"><i class="art-window"></i><i class="art-table"></i><i class="art-chair one"></i><i class="art-chair two"></i><i class="art-lamp"></i><span class="room-number">${room.floor.replace('Lantai ', '')} · ${room.capacity} KAP.</span></div>`;
-  const nav = active => {
-    document.querySelectorAll('.main-nav a').forEach(link => link.classList.toggle('active', link.dataset.nav === active));
-    const compareLink = $('[data-nav="compare"]');
-    if (compareLink) compareLink.textContent = compareIds.size ? `Bandingkan (${compareIds.size})` : 'Bandingkan';
+  const OPEN = '07.00';
+  const CLOSE = '18.30';
+
+  // ---------- Helpers ----------
+  const toMin = t => { const [h, m] = t.split('.').map(Number); return h * 60 + m; };
+  const toTime = m => `${String(Math.floor(m / 60)).padStart(2, '0')}.${String(m % 60).padStart(2, '0')}`;
+  const overlaps = (a1, a2, b1, b2) => a1 < b2 && b1 < a2;
+  const timeOptions = (() => { const out = []; for (let m = toMin(OPEN); m <= toMin(CLOSE); m += 15) out.push(toTime(m)); return out; })();
+
+  const parseHash = () => {
+    const raw = location.hash.replace(/^#\/?/, '');
+    const [path, qs = ''] = raw.split('?');
+    const p = new URLSearchParams(qs);
+    return { path: decodeURIComponent(path), q: { hari: p.get('hari') || '', mulai: p.get('mulai') || '', selesai: p.get('selesai') || '', peserta: p.get('peserta') || '', kecuali: p.get('kecuali') || '', tindakan: p.get('tindakan') || '' } };
   };
-  const announce = message => {
-    const toast = $('#toast');
-    toast.textContent = message;
-    toast.classList.add('show');
-    window.clearTimeout(announce.timer);
-    announce.timer = window.setTimeout(() => toast.classList.remove('show'), 2600);
+  const qs = (q, extra = {}) => {
+    const p = new URLSearchParams();
+    const all = { hari: q.hari, mulai: q.mulai, selesai: q.selesai, peserta: q.peserta, ...extra };
+    Object.entries(all).forEach(([k, v]) => { if (v) p.set(k, v); });
+    return p.toString();
   };
-  const roomCard = room => `<article class="room-card">
-    <div class="card-art-wrap">${art(room)}</div><div class="card-content">
-      <div class="card-top"><div><h3>${room.name}</h3><span class="location">${locationIcon}${room.building} · ${room.floor}</span></div><span class="capacity">${room.capacity} orang</span></div>
-      <div class="facility-row">${room.facilities.slice(0, 3).map(item => `<span>${item}</span>`).join('')}</div>
-      <div class="card-statuses"><div class="status-line"><span class="status-label">Kondisi saat ini</span>${badge(room.activity, formatActivityClass(room))}</div><div class="status-line"><span class="status-label">Status penggunaan</span>${badge(room.availability, formatAvailabilityClass(room))}</div></div>
-      <div class="card-bottom"><span class="next-time">Berikutnya <strong>${room.next}</strong></span><button class="compare-toggle ${compareIds.has(room.id) ? 'selected' : ''}" data-compare="${room.id}" type="button" aria-pressed="${compareIds.has(room.id)}">${compareIds.has(room.id) ? '✓ Dipilih' : '+ Bandingkan'}</button></div>
-      <a href="#/room/${room.id}" class="card-open">Lihat detail <span aria-hidden="true">↗</span></a>
-    </div></article>`;
+  const validQuery = q => days.includes(q.hari) && timeOptions.includes(q.mulai) && timeOptions.includes(q.selesai) && toMin(q.mulai) < toMin(q.selesai) && Number(q.peserta) > 0;
+  const whenText = q => `${q.hari}, ${q.mulai}–${q.selesai} · ${q.peserta} orang`;
 
-  function updateRoomList() {
-    const query = ($('#room-search')?.value || '').trim().toLocaleLowerCase('id');
-    const building = $('#building-filter')?.value || 'all';
-    const capacity = Number($('#capacity-filter')?.value || 0);
-    const availability = $('#status-filter')?.value || 'all';
-    const activity = $('#activity-filter')?.value || 'all';
-    const filtered = rooms.filter(room => {
-      const haystack = `${room.name} ${room.building} ${room.floor} ${room.facilities.join(' ')}`.toLocaleLowerCase('id');
-      return (!query || haystack.includes(query)) && (building === 'all' || room.building === building) && room.capacity >= capacity && (availability === 'all' || room.availability === availability) && (activity === 'all' || room.activity === activity);
+  // ---------- Status logic ----------
+  // Kondisi menurut jadwal: apakah ada perkuliahan pada waktu yang dicari.
+  // Status persetujuan: apakah sudah ada pengajuan/persetujuan untuk kegiatan lain (data contoh).
+  function evaluate(room, q) {
+    const a = toMin(q.mulai), b = toMin(q.selesai);
+    const classes = (schedule[room.id] || []).filter(c => c.day === q.hari && overlaps(a, b, toMin(c.start), toMin(c.end)));
+    const related = bookings.filter(x => x.room === room.id && x.day === q.hari && overlaps(a, b, toMin(x.start), toMin(x.end)));
+    const approved = related.find(x => x.status === 'approved');
+    const pending = related.find(x => x.status === 'pending');
+    let state = 'open';
+    if (classes.length) state = 'class';
+    else if (approved) state = 'booked';
+    else if (pending) state = 'pending';
+    return { room, classes, booking: approved || pending || null, state, fits: room.capacity >= Number(q.peserta) };
+  }
+
+  const CONDITION = {
+    free: { label: 'Kosong', cls: 'neutral' },
+    class: { label: 'Ada perkuliahan', cls: 'blue' }
+  };
+  const APPROVAL = {
+    open: { label: 'Belum ada pengajuan', short: 'Bisa diajukan ke TU', cls: 'green', note: 'Belum boleh dipakai sebelum disetujui TU.' },
+    pending: { label: 'Menunggu persetujuan', short: 'Ada pengajuan lain', cls: 'amber', note: 'Sudah ada pengajuan kegiatan lain yang sedang menunggu keputusan TU.' },
+    booked: { label: 'Disetujui untuk kegiatan lain', short: 'Tidak bisa dipakai', cls: 'rose', note: 'TU sudah menyetujui kegiatan lain pada waktu ini.' },
+    class: { label: 'Tidak bisa diajukan', short: 'Dipakai perkuliahan', cls: 'rose', note: 'Ruangan dipakai perkuliahan pada waktu ini.' }
+  };
+  const pill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
+  const conditionPill = r => r.state === 'class' ? pill(CONDITION.class.label, CONDITION.class.cls) : pill(CONDITION.free.label, CONDITION.free.cls);
+  const approvalPill = r => pill(APPROVAL[r.state].label, APPROVAL[r.state].cls);
+
+  const setPage = (title, html) => {
+    document.title = `${title} — RuangKita`;
+    app.innerHTML = html;
+    window.scrollTo(0, 0);
+    app.focus({ preventScroll: true });
+  };
+
+  const explainer = (open = false) => `<details class="explainer" ${open ? 'open' : ''}>
+    <summary>Kosong belum tentu boleh dipakai. Apa bedanya?</summary>
+    <div class="explainer-grid">
+      <div><strong>Kondisi menurut jadwal</strong><p>Apakah ada perkuliahan di ruangan pada waktu itu, berdasarkan jadwal kuliah DSI.</p></div>
+      <div><strong>Status persetujuan</strong><p>Apakah TU sudah menyetujui kegiatan lain, ada pengajuan yang menunggu, atau ruangan masih bisa kamu ajukan.</p></div>
+    </div>
+    <p class="explainer-foot">Ruangan baru boleh dipakai setelah pengajuanmu disetujui TU.</p>
+  </details>`;
+
+  // ---------- Page 1: Beranda + form pencarian ----------
+  function home(q) {
+    const sel = (id, label, opts, value, ph) => `<label class="field"><span>${label}</span><select id="${id}" name="${id}" required><option value="">${ph}</option>${opts.map(o => `<option ${o === value ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
+    setPage('Cari ruangan', `<section class="hero">
+        <span class="eyebrow">RuangKita · Mahasiswa DSI ITS</span>
+        <h1>Cari ruangan untuk kegiatanmu, lalu <em>pastikan bisa dipakai.</em></h1>
+        <p class="hero-copy">Masukkan waktu dan jumlah peserta. RuangKita menampilkan jadwal kuliah dan status persetujuan setiap ruangan.</p>
+      </section>
+      <form class="search-card" id="search-form" novalidate>
+        <h2>Kapan dan untuk berapa orang?</h2>
+        <div class="form-grid">
+          ${sel('hari', 'Hari', days, q.hari, 'Pilih hari')}
+          ${sel('mulai', 'Jam mulai', timeOptions.slice(0, -1), q.mulai, 'Pilih jam')}
+          ${sel('selesai', 'Jam selesai', timeOptions.slice(1), q.selesai, 'Pilih jam')}
+          <label class="field"><span>Jumlah peserta</span><input id="peserta" name="peserta" type="number" min="1" max="200" inputmode="numeric" placeholder="Contoh: 15" value="${q.peserta}" required></label>
+        </div>
+        <p class="form-error" id="form-error" role="alert"></p>
+        <button class="button-primary button-wide" type="submit">Cari ruangan</button>
+        <p class="form-hint">Jadwal tersedia Senin–Jumat, pukul ${OPEN}–${CLOSE}.</p>
+      </form>
+      ${explainer()}`);
+    document.querySelector('#search-form').addEventListener('submit', e => {
+      e.preventDefault();
+      const f = e.target;
+      const next = { hari: f.hari.value, mulai: f.mulai.value, selesai: f.selesai.value, peserta: String(parseInt(f.peserta.value, 10) || '') };
+      const err = document.querySelector('#form-error');
+      if (!next.hari || !next.mulai || !next.selesai || !next.peserta) { err.textContent = 'Lengkapi hari, jam mulai, jam selesai, dan jumlah peserta.'; return; }
+      if (toMin(next.mulai) >= toMin(next.selesai)) { err.textContent = 'Jam selesai harus setelah jam mulai.'; return; }
+      if (Number(next.peserta) < 1) { err.textContent = 'Jumlah peserta minimal 1 orang.'; return; }
+      location.hash = `/hasil?${qs(next)}`;
     });
-    $('#room-count').textContent = `${filtered.length} dari ${rooms.length} ruang`;
-    $('#room-grid').innerHTML = filtered.length ? filtered.map(roomCard).join('') : '<div class="empty-state"><strong>Tidak ada ruang yang cocok</strong>Ubah kata kunci atau filter untuk melihat pilihan lain.<button class="button-secondary" id="clear-filters" type="button">Hapus semua filter</button></div>';
   }
 
-  function home() {
-    nav('home');
-    app.innerHTML = `<section class="dashboard-heading"><div><span class="eyebrow">RUANGKITA <span class="eyebrow-separator">/</span> KAMPUS ITS</span><h1>Temukan ruang untuk<br><em>setiap rencana.</em></h1><p class="hero-copy">Lihat kondisi, status penggunaan, dan jadwal ruang di lingkungan kampus.</p></div><div class="dashboard-stat"><span class="stat-icon" aria-hidden="true">⌂</span><span><strong>${rooms.length} ruang</strong><small>di 4 area kampus</small></span></div></section>
-      <section class="find-panel" aria-label="Cari dan filter ruangan"><label class="search-wrap"><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="8.7" cy="8.7" r="5.9" stroke="currentColor" stroke-width="1.7"/><path d="m13.2 13.2 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg><input class="search" id="room-search" type="search" placeholder="Cari nama, gedung, atau lokasi..." aria-label="Cari nama, gedung, atau lokasi ruang"></label>
-      <div class="filter-grid"><label>Gedung<select id="building-filter"><option value="all">Semua gedung</option>${[...new Set(rooms.map(room => room.building))].map(name => `<option>${name}</option>`).join('')}</select></label><label>Kapasitas minimum<select id="capacity-filter"><option value="0">Semua kapasitas</option>${[6, 10, 15, 20, 30].map(value => `<option value="${value}">${value}+ orang</option>`).join('')}</select></label><label>Status penggunaan<select id="status-filter"><option value="all">Semua status</option>${[...new Set(rooms.map(room => room.availability))].map(status => `<option>${status}</option>`).join('')}</select></label><label>Kondisi saat ini<select id="activity-filter"><option value="all">Semua kondisi</option><option>Sedang digunakan</option><option>Tidak sedang digunakan</option></select></label></div></section>
-      <div class="list-heading"><div><h2>Daftar ruangan</h2><p>Informasi ruang kampus, diperbarui sepanjang hari.</p></div><span id="room-count" aria-live="polite"></span></div><section class="room-grid" id="room-grid" aria-label="Daftar ruangan"></section>
-      <aside class="compare-banner"><div class="banner-left"><span class="banner-icon" aria-hidden="true">⇄</span><div><strong>Bandingkan beberapa ruang</strong><span>Pilih hingga tiga ruang untuk melihat informasinya berdampingan.</span></div></div><a class="button-primary" href="#/compare">Buka perbandingan <span aria-hidden="true">→</span></a></aside>`;
-    updateRoomList();
-    ['#room-search', '#building-filter', '#capacity-filter', '#status-filter', '#activity-filter'].forEach(selector => $(selector).addEventListener(selector === '#room-search' ? 'input' : 'change', event => {
-      const type = selector === '#room-search' ? 'pencarian' : 'filter';
-      experiment.log(type, event.target.value);
-      updateRoomList();
-    }));
-    $('#room-grid').addEventListener('click', event => {
-      const compare = event.target.closest('[data-compare]');
-      if (compare) toggleCompare(compare.dataset.compare);
-      if (event.target.closest('#clear-filters')) {
-        ['#room-search', '#building-filter', '#capacity-filter', '#status-filter', '#activity-filter'].forEach(selector => { $(selector).value = selector === '#room-search' ? '' : selector.includes('filter') ? (selector === '#capacity-filter' ? '0' : 'all') : ''; });
-        updateRoomList();
-      }
-    });
-  }
-
-  function toggleCompare(id) {
-    if (compareIds.has(id)) compareIds.delete(id);
-    else if (compareIds.size >= 3) { announce('Kamu dapat memilih maksimal tiga ruang.'); return; }
-    else compareIds.add(id);
-    experiment.log('perbandingan', compareIds.has(id) ? `dipilih: ${id}` : `dihapus: ${id}`);
-    const path = location.hash.replace(/^#\/?/, '');
-    if (path === 'compare') comparison();
-    else if (!path) { updateRoomList(); nav('home'); }
-    else nav('home');
-  }
-
-  function comparison() {
-    nav('compare');
-    app.innerHTML = `<section class="page-heading"><span class="eyebrow">RUANGKITA <span class="eyebrow-separator">/</span> PERBANDINGAN</span><h1>Bandingkan ruang</h1><p class="hero-copy">Pilih hingga tiga ruang. Informasi yang sama ditampilkan untuk setiap pilihan.</p></section>
-      <section class="compare-select-section"><div class="list-heading"><div><h2>Pilih ruang</h2><p id="compare-count" aria-live="polite"></p></div><button class="button-text" id="clear-compare" type="button">Hapus pilihan</button></div><div class="compare-picker" id="compare-picker">${rooms.map(room => `<label class="compare-option"><input type="checkbox" value="${room.id}" ${compareIds.has(room.id) ? 'checked' : ''}><span><strong>${room.name}</strong><small>${room.building} · ${room.floor}</small></span></label>`).join('')}</div></section><section class="compare-results" id="compare-results" aria-live="polite" aria-label="Ruang yang dipilih untuk dibandingkan"></section>`;
-    const render = () => {
-      $('#compare-count').textContent = `${compareIds.size} dari 3 ruang dipilih`;
-      $('#compare-results').innerHTML = compareIds.size ? [...compareIds].map(id => rooms.find(room => room.id === id)).filter(Boolean).map(room => `<article class="compare-room"><header><div><span class="compare-room-type">${room.building}</span><h2>${room.name}</h2><p>${room.floor} · Kapasitas ${room.capacity} orang</p></div></header><dl><div><dt>Kondisi saat ini</dt><dd>${badge(room.activity, formatActivityClass(room))}</dd></div><div><dt>Status penggunaan</dt><dd>${badge(room.availability, formatAvailabilityClass(room))}</dd></div><div><dt>Fasilitas</dt><dd>${room.facilities.join(' · ')}</dd></div><div><dt>Jadwal berikutnya</dt><dd>${room.next}<small>${room.nextUse}</small></dd></div><div><dt>Data diperbarui</dt><dd>${room.updated}</dd></div></dl><a href="#/room/${room.id}" class="card-link">Buka detail ↗</a></article>`).join('') : '<div class="empty-state"><strong>Belum ada ruang dipilih</strong>Pilih ruang di atas untuk mulai membandingkan.</div>';
-    };
-    $('#compare-picker').addEventListener('change', event => {
-      if (!event.target.matches('input[type="checkbox"]')) return;
-      if (event.target.checked && compareIds.size >= 3) { event.target.checked = false; announce('Kamu dapat memilih maksimal tiga ruang.'); return; }
-      if (event.target.checked) compareIds.add(event.target.value); else compareIds.delete(event.target.value);
-      experiment.log('perbandingan', `${event.target.checked ? 'dipilih' : 'dihapus'}: ${event.target.value}`);
-      render(); nav('compare');
-    });
-    $('#clear-compare').addEventListener('click', () => { compareIds.clear(); render(); comparison(); });
-    render();
-  }
-
-  function detail(id) {
-    const room = rooms.find(item => item.id === id);
-    if (!room) { home(); return; }
-    nav('home');
-    experiment.log('ruang dibuka', room.name);
-    const activeScenario = experiment.getActiveScenarioId();
-    const returnTo = activeScenario ? `#/${activeScenario}` : previousPath === 'compare' ? '#/compare' : '#/';
-    const returnLabel = returnTo.includes('scenario') ? 'Kembali ke skenario' : returnTo === '#/compare' ? 'Kembali ke perbandingan' : 'Kembali ke daftar ruang';
-    app.innerHTML = `<section class="detail-page"><a href="${returnTo}" class="back-link">← <span>${returnLabel}</span></a><header class="detail-head"><div><span class="eyebrow">${room.building} <span class="eyebrow-separator">/</span> ${room.floor}</span><h1>${room.name}</h1><p class="hero-copy">Informasi ruang dan jadwal penggunaan.</p></div><span class="capacity detail-capacity">Kapasitas ${room.capacity} orang</span></header>
-      ${art(room, 'detail-art')}<div class="detail-layout"><section class="detail-statuses"><article class="detail-status activity-status"><span class="status-index">01</span><div><h2>Kondisi saat ini</h2>${badge(room.activity, formatActivityClass(room))}<p>Data diperbarui pukul ${room.updated}</p></div></article><article class="detail-status usage-status"><span class="status-index">02</span><div><h2>Status penggunaan</h2>${badge(room.availability, formatAvailabilityClass(room))}<p>Jam operasional ${room.hours}</p></div></article></section>
-      <aside class="side-panel"><h2>Informasi ruang</h2><div class="fact"><span>Gedung</span><strong>${room.building}</strong></div><div class="fact"><span>Lokasi</span><strong>${room.floor}</strong></div><div class="fact"><span>Kapasitas</span><strong>${room.capacity} orang</strong></div><div class="fact"><span>Fasilitas</span><strong>${room.facilities.join(', ')}</strong></div><div class="panel-divider"></div><p class="schedule-title">Jadwal penggunaan</p>${room.schedule.map(item => `<div class="schedule-row"><span class="schedule-time">${item[0]}</span><span class="schedule-desc">${item[1]}${item[2] ? `<small>${item[2]}</small>` : ''}</span></div>`).join('')}<div class="next-use"><span>Penggunaan berikutnya</span><strong>${room.next}</strong><small>${room.nextUse}</small></div><div class="detail-actions"><button class="button-secondary" id="compare-this" type="button">${compareIds.has(room.id) ? 'Dipilih untuk perbandingan' : '+ Bandingkan ruang'}</button><a class="button-primary" href="#/">Kembali ke daftar</a></div></aside></div></section>`;
-    $('#compare-this').addEventListener('click', () => { toggleCompare(room.id); $('#compare-this').textContent = compareIds.has(room.id) ? 'Dipilih untuk perbandingan' : '+ Bandingkan ruang'; });
-  }
-
-  function scenarioPage(index) {
-    const scenario = scenarios[index];
-    if (!scenario) { home(); return; }
-    nav('');
-    experiment.startScenario(scenario.id);
-    experiment.log('skenario dibuka', scenario.title);
-    const savedRecord = experiment.getScenarioRecord(scenario.id);
-    const savedAnswer = savedRecord?.answer ? (rooms.find(room => room.id === savedRecord.answer)?.name || savedRecord.answer) : '';
-    const answerOptions = scenario.answers === 'rooms' ? rooms.map(room => [room.id, room.name]) : scenario.answers.map(answer => [answer, answer]);
-    app.innerHTML = `<section class="test-page"><div class="test-topline"><a class="back-link" href="#/">← <span>Kembali ke RuangKita</span></a><span class="test-tag">Sesi eksplorasi</span></div><div class="scenario-progress">${scenarios.map((_, i) => `<span class="progress-dot ${index === i ? 'current' : ''}" aria-hidden="true"></span>`).join('')}<span class="progress-label">Skenario ${index + 1} dari 3</span></div><article class="scenario-card"><span class="scenario-kicker">SKENARIO 0${index + 1}</span><h1>${scenario.title}</h1><div class="scenario-task">“${scenario.task}”</div><p class="scenario-hint">${scenario.hint}</p><a class="scenario-browse" href="${index === 1 ? '#/room/si-301' : '#/'}">${index === 1 ? 'Buka detail Ruang SI-301' : 'Jelajahi daftar ruangan'} <span aria-hidden="true">→</span></a>${savedRecord?.completedAt ? `<div class="completed-message"><span class="completed-icon">✓</span><div><strong>Skenario sudah selesai</strong><p>Jawaban tersimpan: ${savedAnswer}</p></div><button type="button" class="button-secondary" id="restart-scenario">Mulai ulang skenario</button></div>` : `<form id="scenario-response" class="scenario-response"><label for="scenario-answer">${scenario.answerPrompt}</label><div class="response-controls"><select id="scenario-answer" required><option value="">Pilih jawaban...</option>${answerOptions.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select><button class="button-primary" type="submit">Selesaikan skenario</button></div><p class="response-note">Pilihanmu disimpan di browser ini untuk sesi pengujian.</p></form>`}</article><div class="scenario-navigation">${index > 0 ? `<a href="#/${scenarios[index - 1].id}" class="button-text">← Skenario sebelumnya</a>` : '<span></span>'}${index < scenarios.length - 1 ? `<a href="#/${scenarios[index + 1].id}" class="button-text">Lanjut ke skenario berikutnya →</a>` : '<a href="#/" class="button-text">Kembali ke daftar ruang →</a>'}</div></section>`;
-    if (savedRecord?.completedAt) {
-      $('#restart-scenario').addEventListener('click', () => { experiment.restart(scenario.id); scenarioPage(index); });
-      return;
+  // ---------- Page 2: Hasil pencarian ----------
+  function suggestions(q) {
+    // Waktu lain pada hari yang sama (durasi sama) yang masih punya ruangan "bisa diajukan",
+    // diurutkan dari yang paling dekat dengan jam yang dicari.
+    const dur = toMin(q.selesai) - toMin(q.mulai);
+    const want = toMin(q.mulai);
+    const cands = [];
+    for (let s = toMin(OPEN); s + dur <= toMin(CLOSE); s += 15) {
+      if (s === want) continue;
+      const alt = { ...q, mulai: toTime(s), selesai: toTime(s + dur) };
+      const n = rooms.map(r => evaluate(r, alt)).filter(r => r.fits && r.state === 'open').length;
+      if (n) cands.push({ q: alt, n, s });
     }
-    $('#scenario-response').addEventListener('submit', event => {
-      event.preventDefault();
-      const answer = $('#scenario-answer').value;
-      if (!answer) return;
-      if (!experiment.complete(scenario.id, answer)) { announce('Data belum dapat disimpan di browser ini.'); return; }
-      announce('Jawaban tersimpan. Terima kasih.');
-      $('#scenario-response').innerHTML = `<div class="completed-message"><span class="completed-icon">✓</span><div><strong>Skenario selesai</strong><p>Jawaban tersimpan untuk sesi pengujian ini.</p></div><button type="button" class="button-secondary" id="restart-scenario">Mulai ulang skenario</button></div>`;
-      $('#restart-scenario').addEventListener('click', () => { experiment.restart(scenario.id); scenarioPage(index); });
-    });
-  }
-  function moderator() {
-    nav('');
-    const runs = experiment.exportData().runs;
-    app.innerHTML = `<section class="moderator-page"><div class="moderator-heading"><div><span class="eyebrow">RUANGKITA <span class="eyebrow-separator">/</span> FASILITATOR</span><h1>Panel moderator</h1><p class="hero-copy">Instruksi, kriteria observasi, dan catatan sesi tersimpan di browser ini.</p></div><a href="#/" class="button-secondary">Buka tampilan peserta</a></div>
-      <div class="moderator-note"><strong>Catatan privasi</strong><span>Catatan sesi disimpan di localStorage browser dan tidak dikirim ke server. Ekspor data untuk membuat salinan sebelum mengganti perangkat atau menghapus data browser.</span></div>
-      <section class="moderator-section"><div class="list-heading"><div><h2>Panduan skenario</h2><p>Instruksi lengkap untuk disampaikan kepada peserta.</p></div></div><div class="moderator-scenarios">${scenarios.map((scenario, index) => `<article class="moderator-scenario"><div class="scenario-kicker">SKENARIO 0${index + 1}</div><h3>${scenario.title}</h3><blockquote>${scenario.task}</blockquote><p><strong>Tujuan observasi</strong>${scenario.objective}</p><p><strong>Kriteria keberhasilan</strong></p><ul>${scenario.criteria.map(item => `<li>${item}</li>`).join('')}</ul><div class="moderator-actions"><a href="#/${scenario.id}" class="button-primary">Buka skenario</a><button class="button-secondary" data-restart="${scenario.id}" type="button">Mulai ulang</button></div></article>`).join('')}</div></section>
-      <section class="moderator-section"><div class="list-heading"><div><h2>Data eksperimen</h2><p>${runs.length} sesi tersimpan di browser ini.</p></div><div class="moderator-actions"><button class="button-secondary" id="export-data" type="button">Ekspor JSON</button><button class="button-danger" id="reset-data" type="button">Reset data</button></div></div>${runs.length ? `<div class="session-list">${runs.slice().reverse().map(run => `<article class="session-card"><header><strong>${run.id}</strong><span>Dimulai ${new Date(run.startedAt).toLocaleString('id-ID')}</span></header>${scenarios.map((scenario, index) => { const record = run.scenarios[scenario.id]; return `<div class="session-row"><div><strong>Skenario ${index + 1}: ${scenario.title}</strong><span>${record?.completedAt ? `Selesai dalam ${experiment.formatDuration(record.startedAt, record.completedAt)}` : record ? 'Belum selesai' : 'Belum dimulai'}</span></div><div><span class="session-answer">${record?.answer ? (rooms.find(room => room.id === record.answer)?.name || record.answer) : 'Belum ada jawaban'}</span>${record?.events?.length ? `<details><summary>${record.events.length} catatan interaksi</summary><ol>${record.events.map(item => `<li><time>${new Date(item.at).toLocaleTimeString('id-ID')}</time> · ${item.type}: ${item.value}</li>`).join('')}</ol></details>` : ''}</div></div>`; }).join('')}</article>`).join('')}</div>` : '<div class="empty-state"><strong>Belum ada data sesi</strong>Sesi akan muncul di sini saat peserta mulai menjalankan skenario.</div>'}</section></section>`;
-    document.querySelectorAll('[data-restart]').forEach(button => button.addEventListener('click', () => { experiment.restart(button.dataset.restart); location.hash = `/${button.dataset.restart}`; }));
-    $('#reset-data').addEventListener('click', () => {
-      if (!window.confirm('Hapus seluruh data eksperimen yang tersimpan di browser ini? Tindakan ini tidak dapat dibatalkan.')) return;
-      experiment.resetAll(); moderator();
-    });
-    $('#export-data').addEventListener('click', () => {
-      const blob = new Blob([JSON.stringify(experiment.exportData(), null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a'); link.href = url; link.download = 'ruangkita-data-eksperimen.json'; link.click(); URL.revokeObjectURL(url);
-    });
+    cands.sort((x, y) => Math.abs(x.s - want) - Math.abs(y.s - want));
+    const out = [];
+    for (const c of cands) { if (out.length < 4 && !out.some(o => Math.abs(o.s - c.s) < dur)) out.push(c); }
+    return out.sort((x, y) => x.s - y.s);
   }
 
+  function resultCard(r, q) {
+    const href = `#/ruang/${r.room.id}?${qs(q)}`;
+    const cls = r.classes[0];
+    const extra = r.state === 'class' ? `${cls.course} · ${cls.start}–${cls.end}` : r.booking ? `${r.booking.activity} · ${r.booking.start}–${r.booking.end}` : APPROVAL.open.note;
+    return `<a class="room-card state-${r.state}" href="${href}">
+      <div class="room-card-head"><h3>${r.room.name}</h3><span class="capacity">Kapasitas ${r.room.capacity}</span></div>
+      <dl class="status-pair">
+        <div><dt>Kondisi menurut jadwal</dt><dd>${conditionPill(r)}</dd></div>
+        <div class="approval-col"><dt>Status persetujuan</dt><dd>${approvalPill(r)}</dd></div>
+      </dl>
+      <p class="room-card-note">${extra}</p>
+      <span class="card-cta">Lihat detail <span aria-hidden="true">→</span></span>
+    </a>`;
+  }
+
+  function results(q) {
+    if (!validQuery(q)) { home(q); return; }
+    const all = rooms.map(r => evaluate(r, q)).filter(r => r.fits && r.room.id !== q.kecuali);
+    const groups = [
+      { key: 'open', title: 'Bisa diajukan ke TU', desc: 'Kosong menurut jadwal dan belum ada pengajuan lain. Tetap perlu persetujuan TU sebelum dipakai.', items: all.filter(r => r.state === 'open') },
+      { key: 'pending', title: 'Perlu kepastian dari TU', desc: 'Kosong menurut jadwal, tetapi sudah ada pengajuan lain yang menunggu persetujuan.', items: all.filter(r => r.state === 'pending') },
+      { key: 'blocked', title: 'Tidak bisa dipakai pada waktu ini', desc: 'Ada perkuliahan atau TU sudah menyetujui kegiatan lain.', items: all.filter(r => r.state === 'class' || r.state === 'booked') }
+    ];
+    const tooSmall = rooms.filter(r => r.capacity < Number(q.peserta)).length;
+    const excluded = q.kecuali ? rooms.find(r => r.id === q.kecuali) : null;
+    const sugg = groups[0].items.length ? [] : suggestions(q);
+    const otherDays = groups[0].items.length ? [] : days.filter(d => d !== q.hari).map(d => ({ q: { ...q, hari: d }, n: rooms.map(r => evaluate(r, { ...q, hari: d })).filter(r => r.fits && r.state === 'open').length })).filter(x => x.n);
+
+    setPage('Hasil pencarian', `<a class="back-link" href="#/?${qs(q)}">← Ubah pencarian</a>
+      <section class="page-head">
+        <span class="eyebrow">Hasil pencarian</span>
+        <h1>${groups[0].items.length ? `${groups[0].items.length} ruangan bisa diajukan` : 'Belum ada ruangan yang bisa diajukan'}</h1>
+        <p class="query-chip">${whenText(q)} <a href="#/?${qs(q)}">Ubah</a></p>
+        ${excluded ? `<p class="info-banner">Menampilkan alternatif selain <strong>${excluded.name}</strong>.</p>` : ''}
+        ${tooSmall ? `<p class="muted-note">${tooSmall} ruangan disembunyikan karena kapasitasnya kurang dari ${q.peserta} orang.</p>` : ''}
+      </section>
+      ${!groups[0].items.length ? `<section class="empty-box">
+        <strong>Tidak ada ruangan yang bisa diajukan pada waktu ini.</strong>
+        <p>Coba waktu lain di hari ${q.hari}, atau hari lain di jam yang sama.</p>
+        ${sugg.length ? `<p class="sugg-label">Waktu lain hari ${q.hari}:</p><div class="sugg-row">${sugg.map(s => `<a class="sugg" href="#/hasil?${qs(s.q)}">${s.q.mulai}–${s.q.selesai}<small>${s.n} ruangan</small></a>`).join('')}</div>` : ''}
+        ${otherDays.length ? `<p class="sugg-label">Hari lain, ${q.mulai}–${q.selesai}:</p><div class="sugg-row">${otherDays.map(s => `<a class="sugg" href="#/hasil?${qs(s.q)}">${s.q.hari}<small>${s.n} ruangan</small></a>`).join('')}</div>` : ''}
+        <a class="button-secondary" href="#/?${qs(q)}">Ubah kriteria pencarian</a>
+      </section>` : ''}
+      ${groups.filter(g => g.items.length).map(g => `<section class="group group-${g.key}">
+        <div class="group-head"><h2>${g.title} <span class="count">${g.items.length}</span></h2><p>${g.desc}</p></div>
+        <div class="room-grid">${g.items.map(r => resultCard(r, q)).join('')}</div>
+      </section>`).join('')}
+      ${explainer()}`);
+  }
+
+  // ---------- Page 3: Detail ruangan ----------
+  function detail(id, q) {
+    const room = rooms.find(r => r.id === id);
+    if (!room || !validQuery(q)) { home(q); return; }
+    const r = evaluate(room, q);
+    const a = toMin(q.mulai), b = toMin(q.selesai);
+    const items = [
+      ...(schedule[room.id] || []).filter(c => c.day === q.hari).map(c => ({ start: c.start, end: c.end, title: c.course, sub: `Perkuliahan · ${c.info}${c.note ? ` · ${c.note}` : ''}`, kind: 'class' })),
+      ...bookings.filter(x => x.room === room.id && x.day === q.hari).map(x => ({ start: x.start, end: x.end, title: x.activity, sub: x.status === 'approved' ? 'Disetujui TU' : 'Menunggu persetujuan TU', kind: x.status }))
+    ].sort((x, y) => toMin(x.start) - toMin(y.start));
+    const ap = APPROVAL[r.state];
+    setPage(room.name, `<a class="back-link" href="#/hasil?${qs(q)}">← Kembali ke hasil pencarian</a>
+      <section class="page-head">
+        <span class="eyebrow">Detail ruangan</span>
+        <h1>${room.name}</h1>
+        <p class="query-chip">${whenText(q)}</p>
+      </section>
+      <div class="detail-grid">
+        <section class="panel">
+          <h2>Kapasitas</h2>
+          <p class="big-line">${room.capacity} orang <span class="ok">✓ cukup untuk ${q.peserta} orang</span></p>
+          <p class="muted-note">Departemen Sistem Informasi ITS</p>
+          <h2 class="mt">Jadwal hari ${q.hari}</h2>
+          <ul class="timeline">
+            ${items.length ? items.map(it => `<li class="tl-${it.kind} ${overlaps(a, b, toMin(it.start), toMin(it.end)) ? 'tl-hit' : ''}"><span class="tl-time">${it.start}–${it.end}</span><span><strong>${it.title}</strong><small>${it.sub}</small></span></li>`).join('') : '<li class="tl-empty">Tidak ada perkuliahan atau pengajuan pada hari ini.</li>'}
+          </ul>
+          <p class="muted-note">Baris berbingkai hijau tua bentrok dengan waktu yang kamu cari (${q.mulai}–${q.selesai}).</p>
+        </section>
+        <section class="status-col">
+          <article class="status-box">
+            <span class="status-num">1</span>
+            <div><h2>Kondisi menurut jadwal</h2>${conditionPill(r)}
+            <p>${r.state === 'class' ? `${r.classes.map(c => `${c.course} (${c.start}–${c.end})`).join(', ')}.` : `Tidak ada perkuliahan pada ${q.mulai}–${q.selesai}.`}</p>
+            <p class="muted-note">Jadwal kuliah Gasal 2026/2027. Kondisi di lapangan bisa berbeda.</p></div>
+          </article>
+          <article class="status-box approval-box approval-${ap.cls}">
+            <span class="status-num">2</span>
+            <div><h2>Status persetujuan</h2><p class="approval-label">${ap.label}</p>
+            <p>${ap.note}${r.booking ? ` (${r.booking.activity}, ${r.booking.start}–${r.booking.end})` : ''}</p></div>
+          </article>
+          ${r.state === 'open' ? '<p class="warn-line"><strong>Ingat:</strong> ruangan kosong belum berarti boleh langsung dipakai.</p>' : ''}
+          <a class="button-primary button-wide" href="#/ruang/${room.id}/langkah?${qs(q)}">Lihat langkah selanjutnya</a>
+          <a class="button-secondary button-wide" href="#/hasil?${qs(q)}">Bandingkan dengan ruangan lain</a>
+        </section>
+      </div>`);
+  }
+
+  // ---------- Page 4: Langkah selanjutnya ----------
+  function nextStep(id, q) {
+    const room = rooms.find(r => r.id === id);
+    if (!room || !validQuery(q)) { home(q); return; }
+    const r = evaluate(room, q);
+    const alt = `#/hasil?${qs(q, { kecuali: room.id })}`;
+    const done = t => `#/selesai/${room.id}?${qs(q, { tindakan: t })}`;
+    const content = {
+      open: { tone: 'green', title: 'Ruangan ini bisa kamu ajukan ke TU', lead: 'Belum ada kegiatan lain di waktu ini, tetapi ruangan baru boleh dipakai setelah pengajuanmu disetujui TU.',
+        steps: ['Ajukan penggunaan ruangan ke TU Departemen Sistem Informasi sesuai prosedur peminjaman yang berlaku.', 'Tunggu persetujuan dari TU.', 'Gunakan ruangan setelah pengajuanmu disetujui.'],
+        actions: `<a class="button-primary" href="${done('ajukan')}">Pilih ruangan ini &amp; ajukan ke TU</a><a class="button-secondary" href="${alt}">Cari alternatif</a>` },
+      pending: { tone: 'amber', title: 'Perlu kepastian dari TU', lead: `Sudah ada pengajuan lain (${r.booking?.activity}, ${r.booking?.start}–${r.booking?.end}) yang sedang menunggu persetujuan. Ruangan ini belum pasti bisa kamu pakai.`,
+        steps: ['Tanyakan ke TU DSI apakah pengajuan tersebut akan disetujui.', 'Jika tidak disetujui, ajukan penggunaan ruangan untuk kegiatanmu.', 'Sambil menunggu, siapkan ruangan alternatif.'],
+        actions: `<a class="button-primary" href="${done('hubungi-tu')}">Hubungi TU untuk kepastian</a><a class="button-secondary" href="${alt}">Cari alternatif</a>` },
+      booked: { tone: 'rose', title: 'Ruangan ini tidak bisa dipakai pada waktu ini', lead: `TU sudah menyetujui kegiatan lain (${r.booking?.activity}, ${r.booking?.start}–${r.booking?.end}).`,
+        steps: ['Cari ruangan lain pada waktu yang sama, atau', 'ubah waktu kegiatanmu.'],
+        actions: `<a class="button-primary" href="${alt}">Cari alternatif</a><a class="button-secondary" href="#/?${qs(q)}">Ubah waktu</a>` },
+      class: { tone: 'rose', title: 'Ruangan ini tidak bisa dipakai pada waktu ini', lead: `Ruangan dipakai perkuliahan: ${r.classes.map(c => `${c.course} (${c.start}–${c.end})`).join(', ')}.`,
+        steps: ['Cari ruangan lain pada waktu yang sama, atau', 'ubah waktu kegiatanmu.'],
+        actions: `<a class="button-primary" href="${alt}">Cari alternatif</a><a class="button-secondary" href="#/?${qs(q)}">Ubah waktu</a>` }
+    }[r.state];
+    setPage('Langkah selanjutnya', `<a class="back-link" href="#/ruang/${room.id}?${qs(q)}">← Kembali ke detail ruangan</a>
+      <section class="page-head"><span class="eyebrow">Langkah selanjutnya</span><h1>${room.name}</h1><p class="query-chip">${whenText(q)}</p></section>
+      <section class="verdict verdict-${content.tone}">
+        <h2>${content.title}</h2><p>${content.lead}</p>
+        <ol class="steps">${content.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+        <div class="actions">${content.actions}</div>
+      </section>`);
+  }
+
+  // ---------- Page 5: Selesai ----------
+  function finished(id, q) {
+    const room = rooms.find(r => r.id === id);
+    if (!room || !validQuery(q)) { home(q); return; }
+    const ajukan = q.tindakan === 'ajukan';
+    setPage('Pilihan tersimpan', `<section class="done">
+      <span class="done-icon" aria-hidden="true">✓</span>
+      <span class="eyebrow">Selesai</span>
+      <h1>${ajukan ? 'Pilihan ruangan sudah ditentukan' : 'Langkah selanjutnya sudah jelas'}</h1>
+      <dl class="summary">
+        <div><dt>Ruangan</dt><dd>${room.name}</dd></div>
+        <div><dt>Waktu</dt><dd>${q.hari}, ${q.mulai}–${q.selesai}</dd></div>
+        <div><dt>Peserta</dt><dd>${q.peserta} orang</dd></div>
+        <div><dt>Langkah berikutnya</dt><dd>${ajukan ? 'Ajukan penggunaan ruangan ke TU DSI' : 'Hubungi TU DSI untuk memastikan status ruangan'}</dd></div>
+      </dl>
+      <p class="warn-line">${ajukan ? 'Ruangan belum boleh dipakai sampai pengajuanmu disetujui TU.' : 'Siapkan ruangan alternatif selagi menunggu jawaban TU.'}</p>
+      <p class="muted-note">Pada prototype ini, pengajuan belum dikirim lewat RuangKita. Pengajuan online termasuk fitur tahap berikutnya.</p>
+      <div class="actions center"><a class="button-primary" href="#/">Cari ruangan lain</a></div>
+    </section>`);
+  }
+
+  // ---------- Router ----------
   function route() {
-    const path = decodeURIComponent(location.hash.replace(/^#\/?/, ''));
-    previousPath = currentPath;
-    currentPath = path;
-    experiment.log('halaman dibuka', path || 'beranda');
-    if (!path) { home(); return; }
-    if (path === 'compare') { comparison(); return; }
-    if (path === 'moderator') { moderator(); return; }
-    const scenarioPath = path.match(/^(?:test\/scenario-|scenario-?)(\d+)$/);
-    if (scenarioPath) { scenarioPage(Number(scenarioPath[1]) - 1); return; }
-    if (path === 'test') { scenarioPage(0); return; }
-    const roomPath = path.match(/^room\/(.+)$/);
-    if (roomPath) { detail(roomPath[1]); return; }
-    home();
+    const { path, q } = parseHash();
+    let m;
+    if (!path) return home(q);
+    if (path === 'hasil') return results(q);
+    if ((m = path.match(/^ruang\/([^/]+)\/langkah$/))) return nextStep(m[1], q);
+    if ((m = path.match(/^ruang\/([^/]+)$/))) return detail(m[1], q);
+    if ((m = path.match(/^selesai\/([^/]+)$/))) return finished(m[1], q);
+    location.hash = '/';
   }
-
   window.addEventListener('hashchange', route);
   route();
 })();

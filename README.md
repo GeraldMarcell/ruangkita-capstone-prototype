@@ -1,35 +1,34 @@
-# RuangKita
+# RuangKita — Prototype Q3.03
 
-Prototipe statis untuk eksperimen Q2.04. Peserta dapat mencari dan memfilter ruang kampus, membuka detail, membandingkan hingga tiga pilihan, dan menyelesaikan tiga skenario. Panel moderator dan catatan sesi tersedia melalui hash route.
+Clickable prototype untuk satu aktivitas utama dari Experience Design Blueprint Q3.02:
+**mencari ruangan dan memastikan apakah ruangan dapat digunakan.**
+
+Website statis (HTML/CSS/JavaScript) tanpa backend. Bisa dibuka langsung di GitHub Pages.
+
+## Alur (sesuai user flow Q3.02)
+
+| Layar | URL | Isi |
+|---|---|---|
+| 1. Beranda & pencarian | `#/` | Input hari, jam mulai, jam selesai, jumlah peserta |
+| 2. Hasil pencarian | `#/hasil?...` | Ruangan dikelompokkan: bisa diajukan / perlu kepastian TU / tidak bisa dipakai. Jika kosong, muncul saran waktu & hari lain |
+| 3. Detail ruangan | `#/ruang/<id>?...` | Kapasitas, jadwal hari itu, **kondisi menurut jadwal** dan **status persetujuan** (dipisah) |
+| 4. Langkah selanjutnya | `#/ruang/<id>/langkah?...` | Ajukan ke TU / hubungi TU / cari alternatif, sesuai status |
+| 5. Selesai | `#/selesai/<id>?...` | Ringkasan pilihan dan langkah berikutnya (layar sukses untuk alat uji) |
+
+"Cari alternatif" kembali ke hasil pencarian dengan kriteria yang sama dan mengecualikan ruangan yang sedang dilihat (`&kecuali=<id>`).
+
+## Data
+
+- **Ruangan & kapasitas**: 12 ruang DSI (data tim).
+- **Jadwal kuliah**: Jadwal Gasal DSI 2026/2027 V.2.7 (`js/data.js` → `schedule`).
+- **Status persetujuan**: **data contoh/fiktif** (`js/data.js` → `bookings`), untuk menguji perbedaan "kosong" dan "boleh dipakai".
+
+Contoh skenario uji: Rabu 16.00–17.30, 15 orang (semua status muncul). Senin 13.00–14.00, 15 orang (tidak ada ruangan, menguji jalur ubah kriteria).
 
 ## Jalankan lokal
-
-Tidak ada dependency atau langkah build. Dari folder repository, jalankan:
 
 ```bash
 python -m http.server 8000
 ```
 
-Buka `http://localhost:8000`.
-
-## Rute prototipe
-
-- `/#/` — dashboard peserta
-- `/#/room/si-301` — contoh detail ruang
-- `/#/compare` — pilih dan bandingkan maksimal tiga ruang
-- `/#scenario1` — menemukan ruang berdasarkan kebutuhan
-- `/#scenario2` — memeriksa kondisi Ruang SI-301
-- `/#scenario3` — menentukan ruang untuk rapat kelompok
-- `/#/moderator` — panduan moderator dan data sesi lokal
-
-Rute `/#/scenario1` maupun `/#/scenario-1` (serta pola sama untuk skenario 2 dan 3) didukung. URL skenario lama `/#/test/scenario-1`, `-2`, dan `-3` juga tetap didukung.
-
-## Data eksperimen
-
-Jawaban akhir, waktu mulai/selesai tiap skenario, dan riwayat navigasi dasar disimpan di `localStorage` browser dengan key `ruangkita-q204-experiment-v1`. Data tidak dikirim ke server. Panel moderator dapat menampilkan riwayat, mengekspor JSON, memulai ulang skenario, atau mereset semua catatan. Data tersimpan hanya pada browser/perangkat yang digunakan peserta.
-
-Sepuluh ruang, jadwal, kapasitas, fasilitas, dan waktu pembaruan merupakan data fiktif untuk eksperimen. Status ditampilkan sebagai teks dengan label dan ikon, bukan hanya warna.
-
-## GitHub Pages
-
-Pilih branch repository dan folder root sebagai sumber GitHub Pages. Website memakai HTML/CSS/JavaScript statis dan hash navigation, sehingga tidak membutuhkan backend, database, base path, atau fallback routing khusus. Setelah perubahan ditinjau, commit dan push ke branch yang dipakai GitHub Pages.
+Versi eksperimen Q2.04 tetap tersimpan di riwayat Git (commit `0442de9`).
