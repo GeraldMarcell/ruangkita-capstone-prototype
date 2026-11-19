@@ -42,18 +42,38 @@
   }
 
   const CONDITION = {
-    free: { label: 'Kosong', cls: 'neutral' },
-    class: { label: 'Ada perkuliahan', cls: 'blue' }
+    free: { label: 'Tidak ada kuliah', cls: 'neutral' },
+    class: { label: 'Ada kuliah', cls: 'blue' }
   };
   const APPROVAL = {
-    open: { label: 'Belum ada pengajuan', short: 'Bisa diajukan ke TU', cls: 'green', note: 'Belum boleh dipakai sebelum disetujui TU.' },
-    pending: { label: 'Menunggu persetujuan', short: 'Ada pengajuan lain', cls: 'amber', note: 'Sudah ada pengajuan kegiatan lain yang sedang menunggu keputusan TU.' },
-    booked: { label: 'Disetujui untuk kegiatan lain', short: 'Tidak bisa dipakai', cls: 'rose', note: 'TU sudah menyetujui kegiatan lain pada waktu ini.' },
+    open: { label: 'Belum ada yang mengajukan', short: 'Bisa diajukan ke TU', cls: 'green', note: 'Belum boleh dipakai sebelum disetujui TU.' },
+    pending: { label: 'Menunggu keputusan TU', short: 'Ada pengajuan lain', cls: 'amber', note: 'Sudah ada pengajuan kegiatan lain yang sedang menunggu keputusan TU.' },
+    booked: { label: 'Sudah diizinkan untuk kegiatan lain', short: 'Tidak bisa dipakai', cls: 'rose', note: 'TU sudah menyetujui kegiatan lain pada waktu ini.' },
     class: { label: 'Tidak bisa diajukan', short: 'Dipakai perkuliahan', cls: 'rose', note: 'Ruangan dipakai perkuliahan pada waktu ini.' }
   };
   const pill = (text, cls) => `<span class="pill ${cls}">${text}</span>`;
   const conditionPill = r => r.state === 'class' ? pill(CONDITION.class.label, CONDITION.class.cls) : pill(CONDITION.free.label, CONDITION.free.cls);
   const approvalPill = r => pill(APPROVAL[r.state].label, APPROVAL[r.state].cls);
+
+  const LABEL = {
+    cond: 'Jadwal kuliah', condHelp: 'Apakah ruangan dipakai kuliah pada jam yang kamu cari.',
+    appr: 'Persetujuan TU', apprHelp: 'Apakah kamu sudah boleh memakai ruangan. Ruangan baru boleh dipakai setelah TU menyetujui pengajuanmu.'
+  };
+
+  // Penanda posisi pengguna dalam alur (temuan R2: tidak tahu kapan tugas selesai).
+  const STEPS = ['Isi kebutuhan', 'Pilih ruangan', 'Periksa status', 'Tentukan langkah'];
+  const stepper = current => `<ol class="stepper" aria-label="Tahapan">${STEPS.map((t, i) => {
+    const n = i + 1; const st = n < current ? 'done' : n === current ? 'now' : 'todo';
+    return `<li class="step-${st}" ${st === 'now' ? 'aria-current="step"' : ''}><span>${st === 'done' ? '✓' : n}</span>${t}</li>`;
+  }).join('')}</ol>`;
+
+  const legend = () => `<section class="legend" aria-label="Cara membaca status">
+    <div><strong>${LABEL.cond}</strong><p>${LABEL.condHelp}</p></div>
+    <div class="legend-appr"><strong>${LABEL.appr}</strong><p>${LABEL.apprHelp}</p></div>
+  </section>`;
+
+  const summaryText = (room, q) => ['Permohonan penggunaan ruangan', `Ruangan: ${room.name}`, `Waktu: ${q.hari}, ${q.mulai}–${q.selesai}`, `Jumlah peserta: ${q.peserta} orang`, 'Nama kegiatan: ', 'Organisasi: ', 'Penanggung jawab & kontak: '].join('\n');
+  const copyButton = (room, q) => `<button type="button" class="button-secondary" data-copy="${encodeURIComponent(summaryText(room, q))}">Salin ringkasan untuk TU</button>`;
 
   const setPage = (title, html) => {
     document.title = `${title} — RuangKita`;
@@ -65,8 +85,8 @@
   const explainer = (open = false) => `<details class="explainer" ${open ? 'open' : ''}>
     <summary>Kosong belum tentu boleh dipakai. Apa bedanya?</summary>
     <div class="explainer-grid">
-      <div><strong>Kondisi menurut jadwal</strong><p>Apakah ada perkuliahan di ruangan pada waktu itu, berdasarkan jadwal kuliah DSI.</p></div>
-      <div><strong>Status persetujuan</strong><p>Apakah TU sudah menyetujui kegiatan lain, ada pengajuan yang menunggu, atau ruangan masih bisa kamu ajukan.</p></div>
+      <div><strong>${LABEL.cond}</strong><p>${LABEL.condHelp} Datanya dari jadwal kuliah DSI.</p></div>
+      <div><strong>${LABEL.appr}</strong><p>Apakah TU sudah mengizinkan kegiatan lain, ada pengajuan yang menunggu, atau ruangan masih bisa kamu ajukan.</p></div>
     </div>
     <p class="explainer-foot">Ruangan baru boleh dipakai setelah pengajuanmu disetujui TU.</p>
   </details>`;
@@ -74,7 +94,7 @@
   // ---------- Page 1: Beranda + form pencarian ----------
   function home(q) {
     const sel = (id, label, opts, value, ph) => `<label class="field"><span>${label}</span><select id="${id}" name="${id}" required><option value="">${ph}</option>${opts.map(o => `<option ${o === value ? 'selected' : ''}>${o}</option>`).join('')}</select></label>`;
-    setPage('Cari ruangan', `<section class="hero">
+    setPage('Cari ruangan', `${stepper(1)}<section class="hero">
         <span class="eyebrow">RuangKita · Mahasiswa DSI ITS</span>
         <h1>Cari ruangan untuk kegiatanmu, lalu <em>pastikan bisa dipakai.</em></h1>
         <p class="hero-copy">Masukkan waktu dan jumlah peserta. RuangKita menampilkan jadwal kuliah dan status persetujuan setiap ruangan.</p>
@@ -130,8 +150,8 @@
     return `<a class="room-card state-${r.state}" href="${href}">
       <div class="room-card-head"><h3>${r.room.name}</h3><span class="capacity">Kapasitas ${r.room.capacity}</span></div>
       <dl class="status-pair">
-        <div><dt>Kondisi menurut jadwal</dt><dd>${conditionPill(r)}</dd></div>
-        <div class="approval-col"><dt>Status persetujuan</dt><dd>${approvalPill(r)}</dd></div>
+        <div><dt>${LABEL.cond}</dt><dd>${conditionPill(r)}</dd></div>
+        <div class="approval-col"><dt>${LABEL.appr}</dt><dd>${approvalPill(r)}</dd></div>
       </dl>
       <p class="room-card-note">${extra}</p>
       <span class="card-cta">Lihat detail <span aria-hidden="true">→</span></span>
@@ -142,16 +162,16 @@
     if (!validQuery(q)) { home(q); return; }
     const all = rooms.map(r => evaluate(r, q)).filter(r => r.fits && r.room.id !== q.kecuali);
     const groups = [
-      { key: 'open', title: 'Bisa diajukan ke TU', desc: 'Kosong menurut jadwal dan belum ada pengajuan lain. Tetap perlu persetujuan TU sebelum dipakai.', items: all.filter(r => r.state === 'open') },
-      { key: 'pending', title: 'Perlu kepastian dari TU', desc: 'Kosong menurut jadwal, tetapi sudah ada pengajuan lain yang menunggu persetujuan.', items: all.filter(r => r.state === 'pending') },
-      { key: 'blocked', title: 'Tidak bisa dipakai pada waktu ini', desc: 'Ada perkuliahan atau TU sudah menyetujui kegiatan lain.', items: all.filter(r => r.state === 'class' || r.state === 'booked') }
+      { key: 'open', title: 'Bisa diajukan ke TU', desc: 'Tidak ada kuliah dan belum ada yang mengajukan. Tetap perlu persetujuan TU sebelum dipakai.', items: all.filter(r => r.state === 'open') },
+      { key: 'pending', title: 'Perlu kepastian dari TU', desc: 'Tidak ada kuliah, tetapi sudah ada pengajuan lain yang menunggu keputusan TU.', items: all.filter(r => r.state === 'pending') },
+      { key: 'blocked', title: 'Tidak bisa dipakai pada waktu ini', desc: 'Ada kuliah, atau TU sudah mengizinkan kegiatan lain.', items: all.filter(r => r.state === 'class' || r.state === 'booked') }
     ];
     const tooSmall = rooms.filter(r => r.capacity < Number(q.peserta)).length;
     const excluded = q.kecuali ? rooms.find(r => r.id === q.kecuali) : null;
     const sugg = groups[0].items.length ? [] : suggestions(q);
     const otherDays = groups[0].items.length ? [] : days.filter(d => d !== q.hari).map(d => ({ q: { ...q, hari: d }, n: rooms.map(r => evaluate(r, { ...q, hari: d })).filter(r => r.fits && r.state === 'open').length })).filter(x => x.n);
 
-    setPage('Hasil pencarian', `<a class="back-link" href="#/?${qs(q)}">← Ubah pencarian</a>
+    setPage('Hasil pencarian', `${stepper(2)}<a class="back-link" href="#/?${qs(q)}">← Ubah pencarian</a>
       <section class="page-head">
         <span class="eyebrow">Hasil pencarian</span>
         <h1>${groups[0].items.length ? `${groups[0].items.length} ruangan bisa diajukan` : 'Belum ada ruangan yang bisa diajukan'}</h1>
@@ -159,6 +179,7 @@
         ${excluded ? `<p class="info-banner">Menampilkan alternatif selain <strong>${excluded.name}</strong>.</p>` : ''}
         ${tooSmall ? `<p class="muted-note">${tooSmall} ruangan disembunyikan karena kapasitasnya kurang dari ${q.peserta} orang.</p>` : ''}
       </section>
+      ${legend()}
       ${!groups[0].items.length ? `<section class="empty-box">
         <strong>Tidak ada ruangan yang bisa diajukan pada waktu ini.</strong>
         <p>Coba waktu lain di hari ${q.hari}, atau hari lain di jam yang sama.</p>
@@ -169,8 +190,7 @@
       ${groups.filter(g => g.items.length).map(g => `<section class="group group-${g.key}">
         <div class="group-head"><h2>${g.title} <span class="count">${g.items.length}</span></h2><p>${g.desc}</p></div>
         <div class="room-grid">${g.items.map(r => resultCard(r, q)).join('')}</div>
-      </section>`).join('')}
-      ${explainer()}`);
+      </section>`).join('')}`);
   }
 
   // ---------- Page 3: Detail ruangan ----------
@@ -184,7 +204,7 @@
       ...bookings.filter(x => x.room === room.id && x.day === q.hari).map(x => ({ start: x.start, end: x.end, title: x.activity, sub: x.status === 'approved' ? 'Disetujui TU' : 'Menunggu persetujuan TU', kind: x.status }))
     ].sort((x, y) => toMin(x.start) - toMin(y.start));
     const ap = APPROVAL[r.state];
-    setPage(room.name, `<a class="back-link" href="#/hasil?${qs(q)}">← Kembali ke hasil pencarian</a>
+    setPage(room.name, `${stepper(3)}<a class="back-link" href="#/hasil?${qs(q)}">← Kembali ke hasil pencarian</a>
       <section class="page-head">
         <span class="eyebrow">Detail ruangan</span>
         <h1>${room.name}</h1>
@@ -199,21 +219,21 @@
           <ul class="timeline">
             ${items.length ? items.map(it => `<li class="tl-${it.kind} ${overlaps(a, b, toMin(it.start), toMin(it.end)) ? 'tl-hit' : ''}"><span class="tl-time">${it.start}–${it.end}</span><span><strong>${it.title}</strong><small>${it.sub}</small></span></li>`).join('') : '<li class="tl-empty">Tidak ada perkuliahan atau pengajuan pada hari ini.</li>'}
           </ul>
-          <p class="muted-note">Baris berbingkai hijau tua bentrok dengan waktu yang kamu cari (${q.mulai}–${q.selesai}).</p>
+          ${items.some(it => overlaps(a, b, toMin(it.start), toMin(it.end))) ? `<p class="muted-note">Baris berbingkai hijau tua bentrok dengan waktu yang kamu cari (${q.mulai}–${q.selesai}).</p>` : ''}
         </section>
         <section class="status-col">
           <article class="status-box">
             <span class="status-num">1</span>
-            <div><h2>Kondisi menurut jadwal</h2>${conditionPill(r)}
+            <div><h2>${LABEL.cond}</h2><p class="help">${LABEL.condHelp}</p>${conditionPill(r)}
             <p>${r.state === 'class' ? `${r.classes.map(c => `${c.course} (${c.start}–${c.end})`).join(', ')}.` : `Tidak ada perkuliahan pada ${q.mulai}–${q.selesai}.`}</p>
             <p class="muted-note">Jadwal kuliah Gasal 2026/2027. Kondisi di lapangan bisa berbeda.</p></div>
           </article>
           <article class="status-box approval-box approval-${ap.cls}">
             <span class="status-num">2</span>
-            <div><h2>Status persetujuan</h2><p class="approval-label">${ap.label}</p>
+            <div><h2>${LABEL.appr}</h2><p class="help">${LABEL.apprHelp}</p><p class="approval-label">${ap.label}</p>
             <p>${ap.note}${r.booking ? ` (${r.booking.activity}, ${r.booking.start}–${r.booking.end})` : ''}</p></div>
           </article>
-          ${r.state === 'open' ? '<p class="warn-line"><strong>Ingat:</strong> ruangan kosong belum berarti boleh langsung dipakai.</p>' : ''}
+          ${r.state === 'open' ? '<p class="warn-line"><strong>Ingat:</strong> tidak ada kuliah belum berarti boleh langsung dipakai. Kamu tetap perlu persetujuan TU.</p>' : ''}
           <a class="button-primary button-wide" href="#/ruang/${room.id}/langkah?${qs(q)}">Lihat langkah selanjutnya</a>
           <a class="button-secondary button-wide" href="#/hasil?${qs(q)}">Bandingkan dengan ruangan lain</a>
         </section>
@@ -241,11 +261,19 @@
         steps: ['Cari ruangan lain pada waktu yang sama, atau', 'ubah waktu kegiatanmu.'],
         actions: `<a class="button-primary" href="${alt}">Cari alternatif</a><a class="button-secondary" href="#/?${qs(q)}">Ubah waktu</a>` }
     }[r.state];
-    setPage('Langkah selanjutnya', `<a class="back-link" href="#/ruang/${room.id}?${qs(q)}">← Kembali ke detail ruangan</a>
+    const prep = (r.state === 'open' || r.state === 'pending') ? `<div class="prep">
+          <h3>Siapkan saat menghubungi TU</h3>
+          <p>TU yang memastikan ruangan tidak bentrok dengan kegiatan lain, lalu memberi persetujuan.</p>
+          <ul><li>Nama kegiatan dan organisasi</li><li>Penanggung jawab dan kontaknya</li><li>Ruangan, hari, dan jam: <strong>${room.name}, ${q.hari} ${q.mulai}–${q.selesai}</strong></li><li>Jumlah peserta: <strong>${q.peserta} orang</strong></li></ul>
+          ${copyButton(room, q)}
+        </div>` : '';
+    setPage('Langkah selanjutnya', `${stepper(4)}<a class="back-link" href="#/ruang/${room.id}?${qs(q)}">← Kembali ke detail ruangan</a>
       <section class="page-head"><span class="eyebrow">Langkah selanjutnya</span><h1>${room.name}</h1><p class="query-chip">${whenText(q)}</p></section>
       <section class="verdict verdict-${content.tone}">
         <h2>${content.title}</h2><p>${content.lead}</p>
         <ol class="steps">${content.steps.map(s => `<li>${s}</li>`).join('')}</ol>
+        ${prep}
+        <p class="finish-hint">${r.state === 'open' || r.state === 'pending' ? 'Klik tombol hijau untuk menyimpan pilihanmu dan menyelesaikan pencarian.' : 'Ruangan ini tidak bisa dipakai. Cari alternatif untuk melanjutkan.'}</p>
         <div class="actions">${content.actions}</div>
       </section>`);
   }
@@ -260,10 +288,11 @@
     const room = rooms.find(r => r.id === (saved.ruang || p.get('ruang')));
     if (!room || !validQuery(q)) { setPage('Selesai', '<section class="done"><h1>Belum ada pilihan ruangan</h1><div class="actions center"><a class="button-primary" href="./">Cari ruangan</a></div></section>'); return; }
     const ajukan = q.tindakan === 'ajukan';
-    setPage('Pilihan tersimpan', `<section class="done">
+    setPage('Selesai', `${stepper(5)}<section class="done">
       <span class="done-icon" aria-hidden="true">✓</span>
-      <span class="eyebrow">Selesai</span>
-      <h1>${ajukan ? 'Pilihan ruangan sudah ditentukan' : 'Langkah selanjutnya sudah jelas'}</h1>
+      <span class="eyebrow">Pencarian selesai</span>
+      <h1>Rencanamu sudah jelas</h1>
+      <p class="done-lead">Kamu tidak perlu melakukan apa pun lagi di RuangKita. Lanjutkan langkah berikut di luar aplikasi.</p>
       <dl class="summary">
         <div><dt>Ruangan</dt><dd>${room.name}</dd></div>
         <div><dt>Waktu</dt><dd>${q.hari}, ${q.mulai}–${q.selesai}</dd></div>
@@ -272,7 +301,7 @@
       </dl>
       <p class="warn-line">${ajukan ? 'Ruangan belum boleh dipakai sampai pengajuanmu disetujui TU.' : 'Siapkan ruangan alternatif selagi menunggu jawaban TU.'}</p>
       <p class="muted-note">Pada prototype ini, pengajuan belum dikirim lewat RuangKita. Pengajuan online termasuk fitur tahap berikutnya.</p>
-      <div class="actions center"><a class="button-primary" href="./">Cari ruangan lain</a></div>
+      <div class="actions center">${copyButton(room, q)}<a class="button-primary" href="./">Cari ruangan lain</a></div>
     </section>`);
   }
 
@@ -298,6 +327,20 @@
       e.preventDefault();
       location.href = 'selesai.html';
     } catch { /* tanpa sessionStorage: pakai URL dengan parameter */ }
+  });
+
+  // Salin ringkasan untuk TU.
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-copy]');
+    if (!b) return;
+    const text = decodeURIComponent(b.dataset.copy);
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); } catch { /* abaikan */ }
+      t.remove();
+    }
+    const old = b.textContent; b.textContent = 'Tersalin ✓'; setTimeout(() => { b.textContent = old; }, 1800);
   });
 
   if (document.body.dataset.page === 'selesai') finished();
