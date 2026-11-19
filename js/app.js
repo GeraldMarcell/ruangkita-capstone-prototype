@@ -226,7 +226,7 @@
     if (!room || !validQuery(q)) { home(q); return; }
     const r = evaluate(room, q);
     const alt = `#/hasil?${qs(q, { kecuali: room.id })}`;
-    const done = t => `#/selesai/${room.id}?${qs(q, { tindakan: t })}`;
+    const done = t => `selesai.html?${qs(q, { ruang: room.id, tindakan: t })}" data-finish="${t}`;
     const content = {
       open: { tone: 'green', title: 'Ruangan ini bisa kamu ajukan ke TU', lead: 'Belum ada kegiatan lain di waktu ini, tetapi ruangan baru boleh dipakai setelah pengajuanmu disetujui TU.',
         steps: ['Ajukan penggunaan ruangan ke TU Departemen Sistem Informasi sesuai prosedur peminjaman yang berlaku.', 'Tunggu persetujuan dari TU.', 'Gunakan ruangan setelah pengajuanmu disetujui.'],
@@ -251,9 +251,14 @@
   }
 
   // ---------- Page 5: Selesai ----------
-  function finished(id, q) {
-    const room = rooms.find(r => r.id === id);
-    if (!room || !validQuery(q)) { home(q); return; }
+  function finished() {
+    // Halaman tetap (selesai.html) supaya alat uji bisa memakai satu Success URL.
+    let saved = {};
+    try { saved = JSON.parse(sessionStorage.getItem('rk-pilihan') || '{}'); } catch { saved = {}; }
+    const p = new URLSearchParams(location.search);
+    const q = { hari: saved.hari || p.get('hari') || '', mulai: saved.mulai || p.get('mulai') || '', selesai: saved.selesai || p.get('selesai') || '', peserta: saved.peserta || p.get('peserta') || '', tindakan: saved.tindakan || p.get('tindakan') || '' };
+    const room = rooms.find(r => r.id === (saved.ruang || p.get('ruang')));
+    if (!room || !validQuery(q)) { setPage('Selesai', '<section class="done"><h1>Belum ada pilihan ruangan</h1><div class="actions center"><a class="button-primary" href="./">Cari ruangan</a></div></section>'); return; }
     const ajukan = q.tindakan === 'ajukan';
     setPage('Pilihan tersimpan', `<section class="done">
       <span class="done-icon" aria-hidden="true">✓</span>
@@ -267,7 +272,7 @@
       </dl>
       <p class="warn-line">${ajukan ? 'Ruangan belum boleh dipakai sampai pengajuanmu disetujui TU.' : 'Siapkan ruangan alternatif selagi menunggu jawaban TU.'}</p>
       <p class="muted-note">Pada prototype ini, pengajuan belum dikirim lewat RuangKita. Pengajuan online termasuk fitur tahap berikutnya.</p>
-      <div class="actions center"><a class="button-primary" href="#/">Cari ruangan lain</a></div>
+      <div class="actions center"><a class="button-primary" href="./">Cari ruangan lain</a></div>
     </section>`);
   }
 
@@ -279,9 +284,22 @@
     if (path === 'hasil') return results(q);
     if ((m = path.match(/^ruang\/([^/]+)\/langkah$/))) return nextStep(m[1], q);
     if ((m = path.match(/^ruang\/([^/]+)$/))) return detail(m[1], q);
-    if ((m = path.match(/^selesai\/([^/]+)$/))) return finished(m[1], q);
     location.hash = '/';
   }
-  window.addEventListener('hashchange', route);
-  route();
+
+  // Simpan pilihan lalu buka selesai.html tanpa parameter (Success URL yang tetap).
+  document.addEventListener('click', e => {
+    const a = e.target.closest('[data-finish]');
+    if (!a) return;
+    const { q } = parseHash();
+    const id = (location.hash.match(/ruang\/([^/]+)\/langkah/) || [])[1];
+    try {
+      sessionStorage.setItem('rk-pilihan', JSON.stringify({ ...q, ruang: id, tindakan: a.dataset.finish }));
+      e.preventDefault();
+      location.href = 'selesai.html';
+    } catch { /* tanpa sessionStorage: pakai URL dengan parameter */ }
+  });
+
+  if (document.body.dataset.page === 'selesai') finished();
+  else { window.addEventListener('hashchange', route); route(); }
 })();
