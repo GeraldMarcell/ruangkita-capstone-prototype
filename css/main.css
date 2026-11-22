@@ -190,3 +190,42 @@ h2{font:700 17px/1.3 Manrope,sans-serif}
   .legend{grid-template-columns:1fr}
   .legend-appr{border-left:0;padding-left:0;border-top:1px solid var(--line);padding-top:10px}
 }
+
+/* Q3.04: navigasi, form pengajuan, status, panel TU */
+.topnav{display:flex;gap:6px}
+.topnav a{font-size:14px;font-weight:600;color:#52605b;padding:8px 12px;border-radius:8px}
+.topnav a:hover{background:#eef1ef;color:var(--green)}
+.footer a{color:inherit;text-decoration:underline}
+.loading{color:var(--muted);padding:40px 0;text-align:center}
+.form-grid.two{grid-template-columns:1fr 1fr}
+.request-form{margin-top:18px;border-top:1px solid var(--line);padding-top:18px}
+.request-form .actions{margin-top:6px}
+.verdict .warn-line{margin-top:12px}
+.button-primary:disabled{opacity:.6;cursor:wait}
+.inline-form{display:flex;gap:12px;align-items:flex-end}
+.inline-form .field{flex:1}
+.search-card.narrow{max-width:420px;display:flex;flex-direction:column;gap:12px}
+.status-result{margin-top:20px;max-width:760px}
+.code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.5px}
+.summary .code{font-size:18px;color:var(--green)}
+.tu-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px}
+.tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.tab{border:1px solid #d3dcd7;background:#fff;border-radius:999px;padding:7px 14px;font-weight:600;font-size:13px;cursor:pointer}
+.tab.on{background:var(--green);border-color:var(--green);color:#fff}
+.tu-list{display:flex;flex-direction:column;gap:12px;max-width:860px}
+.tu-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px}
+.tu-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.tu-card h3{font:700 17px Manrope,sans-serif}
+.tu-card h3 small{font:500 14px 'DM Sans',sans-serif;color:var(--muted)}
+.tu-meta{font-size:13px;color:var(--muted);margin-top:4px}
+.tu-card .warn-line{margin-top:10px;font-size:13px}
+.tu-actions{display:flex;gap:8px;margin-top:14px;flex-wrap:wrap}
+.tu-note{flex:1;min-width:200px;height:42px;border:1px solid #d3dcd7;border-radius:9px;padding:0 12px}
+.button-secondary.danger{color:var(--rose);border-color:#e1a59f}
+.button-secondary.danger:hover{background:var(--rose-bg)}
+@media(max-width:520px){
+  .form-grid.two{grid-template-columns:1fr}
+  .inline-form{flex-direction:column;align-items:stretch}
+  .topnav a{padding:6px 8px;font-size:13px}
+  .tu-head{flex-direction:column;align-items:flex-start}
+}

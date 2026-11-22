@@ -5,13 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#f5f7f5" />
   <meta name="description" content="RuangKita — cari ruangan DSI ITS dan pastikan apakah ruangan bisa digunakan." />
-  <title>Selesai — RuangKita</title>
+  <title>Pengajuan terkirim — RuangKita</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/main.css" />
-  <!-- UXtweak snippet: tempel di sini (sama persis dengan di index.html) -->
-  <script type="text/javascript">(function(u,x,t,w,e,a,k,s){a=function(v){try{u.setItem(t+e,v)}catch(e){}v=JSON.parse(v);for(k=0;k<v.length;k++){s=x.createElement("script");s.text="(function(u,x,t,w,e,a,k){a=u[e]=function(){a.q.push(arguments)};a.q=[];a.t=+new Date;a.c=w;k=x.createElement('script');k.async=1;k.src=t;x.getElementsByTagName('head')[0].appendChild(k)})(window,document,'"+v[k].u+"',"+JSON.stringify(v[k].c)+",'"+v[k].g+"')";x.getElementsByTagName("head")[0].appendChild(s)}};try{k=u.getItem(t+e)}catch(e){}if(k){return a(k)}k=new XMLHttpRequest;k.onreadystatechange=function(){if(k.readyState==4&&k.status==200)a(k.responseText)};k.open("POST",w+e);k.send(x.URL)})(sessionStorage,document,"uxt:","https://api.uxtweak.com/snippet/","3e8129a8-3a9e-453b-87c1-e2245d8bf8bb");</script>
 </head>
 <body data-page="selesai">
   <div class="shell">
@@ -20,15 +18,17 @@
         <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 13.2 16 5l11 8.2v13.3H5V13.2Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 26.5v-8h8v8M9.5 14h13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
         <span class="brand-name">ruang<span>kita</span></span>
       </a>
-      <span class="campus-label"><span class="campus-dot" aria-hidden="true"></span>DSI ITS</span>
+      <nav class="topnav" aria-label="Navigasi utama"><a href="./">Cari ruangan</a><a href="status.html">Cek status</a></nav>
     </header>
     <main id="app" tabindex="-1"></main>
     <footer class="footer">
-      <span>Prototype Q3.03 · RuangKita</span>
-      <span>Jadwal: Jadwal Gasal DSI 2026/2027 (V.2.7) · Persetujuan TU: data contoh</span>
+      <span>RuangKita · MVP Q3.04</span>
+      <span>Jadwal: Jadwal Gasal DSI 2026/2027 (V.2.7) · <a href="tu.html">Masuk petugas TU</a></span>
     </footer>
   </div>
-  <script src="js/data.js"></script>
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

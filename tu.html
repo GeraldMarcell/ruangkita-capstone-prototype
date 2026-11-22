@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#f5f7f5" />
+  <meta name="robots" content="noindex" />
+  <meta name="description" content="RuangKita — cari ruangan DSI ITS dan pastikan apakah ruangan bisa digunakan." />
+  <title>Panel TU — RuangKita</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/main.css" />
+</head>
+<body data-page="tu">
+  <div class="shell">
+    <header class="topbar">
+      <a class="brand" href="./" aria-label="RuangKita, beranda">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none"><path d="M5 13.2 16 5l11 8.2v13.3H5V13.2Z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M12 26.5v-8h8v8M9.5 14h13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+        <span class="brand-name">ruang<span>kita</span></span>
+      </a>
+      <nav class="topnav" aria-label="Navigasi utama"><a href="./">Cari ruangan</a><a href="status.html">Cek status</a></nav>
+    </header>
+    <main id="app" tabindex="-1"></main>
+    <footer class="footer">
+      <span>RuangKita · MVP Q3.04</span>
+      <span>Jadwal: Jadwal Gasal DSI 2026/2027 (V.2.7) · <a href="tu.html">Masuk petugas TU</a></span>
+    </footer>
+  </div>
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
