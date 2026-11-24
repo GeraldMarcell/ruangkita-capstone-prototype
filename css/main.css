@@ -229,3 +229,20 @@ h2{font:700 17px/1.3 Manrope,sans-serif}
   .topnav a{padding:6px 8px;font-size:13px}
   .tu-head{flex-direction:column;align-items:flex-start}
 }
+
+/* Q3.05: simpan kode, daftar pengajuan di perangkat */
+.keep-code{background:var(--mint);border-radius:12px;padding:14px 16px;margin-top:14px;text-align:left}
+.keep-code p{font-size:14px;color:#2f4a3f}
+.keep-code .actions{margin-top:10px}
+.my-requests{max-width:760px;margin-top:18px}
+.my-requests h2{font-size:15px;margin-bottom:8px}
+.my-requests ul{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px}
+.my-requests a{display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 14px;font-size:14px}
+.my-requests a:hover{border-color:#9fc0ad}
+.my-requests span{color:var(--muted)}
+.test-table{width:100%;border-collapse:collapse;font-size:13px}
+.test-table th,.test-table td{text-align:left;padding:8px;border-bottom:1px solid var(--line);vertical-align:top}
+.test-table th{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+.pass{color:var(--green)}.fail{color:var(--rose)}
+.fail-row{background:var(--rose-bg)}
+@media(max-width:520px){.test-table{font-size:12px}.test-table th:nth-child(3),.test-table td:nth-child(3){display:none}}

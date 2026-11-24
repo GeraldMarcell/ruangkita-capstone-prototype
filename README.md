@@ -1,4 +1,4 @@
-# RuangKita — MVP Q3.04
+# RuangKita — MVP Q3.05 (Integrated)
 
 Website untuk mahasiswa DSI ITS mencari ruangan, mengajukan peminjaman ke TU, dan melihat status persetujuannya.
 
@@ -12,6 +12,7 @@ Mahasiswa mengajukan → data tersimpan di Supabase → status ruangan berubah d
 | `selesai.html?kode=…` | Konfirmasi pengajuan tersimpan + kode |
 | `status.html` | Cek status pengajuan dengan kode |
 | `tu.html` | Panel petugas TU: login, lihat pengajuan, setujui/tolak |
+| `uji-integrasi.html` | Uji integrasi otomatis (browser ↔ API ↔ database ↔ aturan keamanan) |
 
 ## Arsitektur
 GitHub Pages (HTML/CSS/JS) → `supabase-js` → Supabase (PostgreSQL + Auth).
@@ -25,4 +26,8 @@ GitHub Pages (HTML/CSS/JS) → `supabase-js` → Supabase (PostgreSQL + Auth).
 3. Jalankan `supabase/petugas_tu.sql` dengan email akun TU tersebut.
 4. Isi `js/config.js` dengan Project URL dan anon/publishable key.
 
-Versi sebelumnya: tag `q303-v1`, `q303-v2` (prototype Q3.03 dengan data contoh).
+## Pembaruan Q3.05
+- Menyetujui satu pengajuan otomatis menolak pengajuan lain yang masih menunggu pada ruang & waktu yang sama (`supabase/q305-update.sql`).
+- Kode pengajuan bisa disalin, dikirim ke WhatsApp, dan tersimpan di perangkat (menu Cek status).
+
+Versi sebelumnya: tag `q304-v1`, tag `q303-v1`, `q303-v2` (prototype Q3.03 dengan data contoh).

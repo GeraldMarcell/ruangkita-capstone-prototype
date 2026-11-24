@@ -23,6 +23,23 @@
   const validDate = s => /^\d{4}-\d{2}-\d{2}$/.test(s || '') && !isNaN(parseDate(s)) && s >= api.today() && DAYS.includes(dayName(s));
   const nextWeekdays = (from, n) => { const out = []; const d = parseDate(from); while (out.length < n) { d.setDate(d.getDate() + 1); if (DAYS.includes(dayName(isoDate(d)))) out.push(isoDate(d)); } return out; };
 
+  // Kode pengajuan disimpan juga di perangkat ini supaya tidak hilang (Q3.05).
+  const MY_KEY = 'rk-pengajuan-saya';
+  const myRequests = () => { try { return JSON.parse(localStorage.getItem(MY_KEY) || '[]'); } catch { return []; } };
+  const rememberRequest = r => {
+    try {
+      const list = myRequests().filter(x => x.kode !== r.kode);
+      list.unshift(r);
+      localStorage.setItem(MY_KEY, JSON.stringify(list.slice(0, 10)));
+    } catch { /* penyimpanan browser tidak tersedia: abaikan */ }
+  };
+  const shareText = d => `Pengajuan ruangan RuangKita\nKode: ${d.kode}\nRuangan: ${d.ruang_nama}\nWaktu: ${fmtDate(d.tanggal)}, ${d.jam_mulai}–${d.jam_selesai}\nKegiatan: ${d.nama_kegiatan}\nCek status: ${new URL(`status.html?kode=${encodeURIComponent(d.kode)}`, location.href).href}`;
+  const keepCodeBox = d => `<div class="keep-code">
+      <p><strong>Simpan kode ini.</strong> Kode juga tersimpan di perangkat ini dan bisa dilihat lagi di menu Cek status.</p>
+      <div class="actions"><button type="button" class="button-secondary" data-copy-text="${esc(d.kode)}">Salin kode</button>
+      <a class="button-secondary" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent(shareText(d))}">Kirim ke WhatsApp</a></div>
+    </div>`;
+
   const parseHash = () => {
     const raw = location.hash.replace(/^#\/?/, '');
     const [path, query = ''] = raw.split('?');
@@ -278,7 +295,7 @@
     }
 
     const pendingNote = r.state === 'pending'
-      ? `<p class="warn-line">Sudah ada ${r.pendingCount} pengajuan lain pada waktu ini (${esc(r.booking.activity)}). Pengajuanmu tetap bisa dikirim, lalu TU yang memutuskan.</p>` : '';
+      ? `<p class="warn-line">Sudah ada ${r.pendingCount} pengajuan lain pada waktu ini (${esc(r.booking.activity)}). Pengajuanmu tetap bisa dikirim, lalu TU yang memutuskan. Jika salah satu pengajuan disetujui, pengajuan lain pada waktu yang sama otomatis ditolak.</p>` : '';
     setPage('Ajukan ruangan', `${stepper(4)}${back}${head}
       <section class="verdict verdict-${r.state === 'open' ? 'green' : 'amber'}">
         <h2>${r.state === 'open' ? 'Ruangan ini bisa kamu ajukan ke TU' : 'Ruangan ini perlu kepastian dari TU'}</h2>
@@ -312,6 +329,7 @@
       btn.disabled = true; btn.textContent = 'Mengirim…';
       try {
         const res = await api.submitRequest({ roomId: room.id, date: q.tanggal, start: q.mulai, end: q.selesai, participants: q.peserta, ...v });
+        rememberRequest({ kode: res.kode, ruang: room.name, tanggal: q.tanggal, mulai: q.mulai, selesai: q.selesai });
         location.href = `selesai.html?kode=${encodeURIComponent(res.kode)}`;
       } catch (ex) {
         err.textContent = ex.message;
@@ -347,12 +365,14 @@
     loading('Memuat pengajuan…');
     try {
       const d = await api.checkRequest(code);
+      rememberRequest({ kode: d.kode, ruang: d.ruang_nama, tanggal: d.tanggal, mulai: d.jam_mulai, selesai: d.jam_selesai });
       setPage('Pengajuan terkirim', `${stepper(5)}<section class="done">
         <span class="done-icon" aria-hidden="true">✓</span>
         <span class="eyebrow">Pengajuan terkirim</span>
         <h1>Pengajuanmu sudah tersimpan</h1>
-        <p class="done-lead">Simpan kode di bawah untuk mengecek keputusan TU.</p>
+        <p class="done-lead">Gunakan kode di bawah untuk mengecek keputusan TU.</p>
         ${requestCard(d)}
+        ${keepCodeBox(d)}
         <div class="actions center"><a class="button-secondary" href="status.html?kode=${encodeURIComponent(d.kode)}">Cek status pengajuan</a><a class="button-primary" href="./">Cari ruangan lain</a></div>
       </section>`);
     } catch (ex) { errorPage(ex); }
@@ -368,8 +388,11 @@
         <button class="button-primary" type="submit">Cek status</button></div>
         <p class="form-error" id="status-error" role="alert"></p>
       </form>
+      ${myRequests().length ? `<section class="my-requests"><h2>Pengajuan dari perangkat ini</h2>
+        <ul>${myRequests().map(x => `<li><a href="?kode=${encodeURIComponent(x.kode)}" data-kode="${esc(x.kode)}"><strong class="code">${esc(x.kode)}</strong><span>${esc(x.ruang)} · ${fmtDate(x.tanggal)}, ${esc(x.mulai)}–${esc(x.selesai)}</span></a></li>`).join('')}</ul></section>` : ''}
       <section id="status-result" class="status-result"></section>`);
     const form = document.querySelector('#status-form');
+    document.querySelectorAll('.my-requests [data-kode]').forEach(a => { a.onclick = e => { e.preventDefault(); form.kode.value = a.dataset.kode; run(); }; });
     const run = async () => {
       const code = form.kode.value.trim();
       const err = document.querySelector('#status-error');
@@ -377,7 +400,7 @@
       if (!code) { err.textContent = 'Masukkan kode pengajuan.'; return; }
       err.textContent = ''; out.innerHTML = '<p class="loading">Mencari pengajuan…</p>';
       history.replaceState(null, '', `?kode=${encodeURIComponent(code)}`);
-      try { const d = await api.checkRequest(code); out.innerHTML = `<div class="panel">${requestCard(d)}</div>`; }
+      try { const d = await api.checkRequest(code); out.innerHTML = `<div class="panel">${requestCard(d)}${keepCodeBox(d)}</div>`; }
       catch (ex) { out.innerHTML = ''; err.textContent = ex.message; }
     };
     form.addEventListener('submit', e => { e.preventDefault(); run(); });
@@ -423,7 +446,7 @@
         <h3>${esc(x.nama_kegiatan)} <small>· ${esc(x.organisasi)}</small></h3>
         <p class="tu-meta">${esc(roomName(x.ruang_id))} · ${fmtDate(x.tanggal)}, ${x.jam_mulai}–${x.jam_selesai} · ${x.peserta} orang</p>
         <p class="tu-meta">PJ: ${esc(x.penanggung_jawab)} · ${esc(x.kontak)} · diajukan ${fmtDateTime(x.dibuat_pada)}</p>
-        ${c.length ? `<p class="warn-line">Bentrok dengan ${c.map(y => `${esc(y.kode)} (${REQ_STATUS[y.status].label.toLowerCase()})`).join(', ')}.</p>` : ''}
+        ${c.length ? `<p class="warn-line">Bentrok dengan ${c.map(y => `${esc(y.kode)} (${REQ_STATUS[y.status].label.toLowerCase()})`).join(', ')}.${x.status === 'menunggu' ? ' Jika pengajuan ini disetujui, pengajuan lain yang masih menunggu akan otomatis ditolak.' : ''}</p>` : ''}
         ${x.catatan_tu ? `<p class="tu-meta">Catatan TU: ${esc(x.catatan_tu)}</p>` : ''}
         ${x.status === 'menunggu' ? `<div class="tu-actions">
           <input class="tu-note" placeholder="Catatan untuk mahasiswa (opsional)" maxlength="200">
@@ -449,11 +472,26 @@
         art.querySelectorAll('button').forEach(x => { x.disabled = true; });
         try {
           const res = await api.decide(art.dataset.id, b.dataset.decide, art.querySelector('.tu-note').value);
-          tuPage(filter, `Pengajuan ${res.kode} ${res.status === 'disetujui' ? 'disetujui' : 'ditolak'}.`);
+          const auto = res.ditolak_otomatis || [];
+          tuPage(filter, `Pengajuan ${res.kode} ${res.status === 'disetujui' ? 'disetujui' : 'ditolak'}.${auto.length ? ` ${auto.length} pengajuan lain yang bentrok (${auto.join(', ')}) otomatis ditolak.` : ''}`);
         } catch (ex) { err.textContent = ex.message; art.querySelectorAll('button').forEach(x => { x.disabled = false; }); }
       };
     });
   }
+
+  // Tombol salin kode
+  document.addEventListener('click', async e => {
+    const b = e.target.closest('[data-copy-text]');
+    if (!b) return;
+    const text = b.dataset.copyText;
+    try { await navigator.clipboard.writeText(text); }
+    catch {
+      const t = document.createElement('textarea'); t.value = text; document.body.appendChild(t); t.select();
+      try { document.execCommand('copy'); } catch { /* abaikan */ }
+      t.remove();
+    }
+    const old = b.textContent; b.textContent = 'Tersalin ✓'; setTimeout(() => { b.textContent = old; }, 1800);
+  });
 
   // ---------- Router ----------
   async function route() {
